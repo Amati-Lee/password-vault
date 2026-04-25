@@ -210,18 +210,35 @@ async function encrypt(plaintext, password) {
   return bufToBase64(buf);
 }
 
+// 用快取的 key 加密（跳過 PBKDF2），存檔用
+async function encryptFast(plaintext) {
+  if (!cachedKey || !cachedSalt) throw new Error('No cached key');
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, cachedKey, ENC.encode(plaintext));
+  const buf = new Uint8Array(16 + 12 + ct.byteLength);
+  buf.set(cachedSalt, 0);
+  buf.set(iv, 16);
+  buf.set(new Uint8Array(ct), 28);
+  return bufToBase64(buf);
+}
+
 async function decrypt(b64, password) {
   const raw = base64ToBuf(b64);
   const salt = raw.slice(0, 16);
   const iv = raw.slice(16, 28);
   const ct = raw.slice(28);
   const key = await deriveKey(password, salt);
+  // 快取這組 key 供後續存檔用
+  cachedKey = key;
+  cachedSalt = salt;
   const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, ct);
   return DEC.decode(pt);
 }
 
 // --- State ---
 let masterPassword = null;
+let cachedKey = null;    // 快取 AES key，避免每次存檔重算 PBKDF2
+let cachedSalt = null;   // 對應的 salt
 let entries = []; // [{id, site, user, pass, note, created, modified}]
 
 const STORAGE_KEY = 'pv_data';
@@ -290,9 +307,13 @@ async function doSetup() {
   try {
     const verify = await encrypt('vault_ok', pw);
     localStorage.setItem(VERIFY_KEY, verify);
+    // 建立快取 key 供後續存檔用
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    cachedKey = await deriveKey(pw, salt);
+    cachedSalt = salt;
     entries = [];
-    await saveData(pw);
     masterPassword = pw;
+    await saveData();
     showApp();
   } catch(e) { $('lockError').textContent = '設定失敗: ' + e.message; }
 }
@@ -340,13 +361,14 @@ async function loadData(pw) {
 
 async function saveData(pw) {
   try {
-    const enc = await encrypt(JSON.stringify(entries), pw || masterPassword);
-    localStorage.setItem(STORAGE_KEY, enc);
-    // 驗證寫入成功
-    const check = localStorage.getItem(STORAGE_KEY);
-    if (!check || check !== enc) {
-      toast('儲存失敗：寫入驗證不通過');
+    let enc;
+    if (!pw && cachedKey) {
+      // 用快取 key，跳過 PBKDF2（瞬間完成）
+      enc = await encryptFast(JSON.stringify(entries));
+    } else {
+      enc = await encrypt(JSON.stringify(entries), pw || masterPassword);
     }
+    localStorage.setItem(STORAGE_KEY, enc);
   } catch(e) {
     toast('儲存失敗：' + e.message);
     console.error('saveData failed:', e);
@@ -544,6 +566,8 @@ async function doLock() {
     await saveData();
   }
   masterPassword = null;
+  cachedKey = null;
+  cachedSalt = null;
   entries = [];
   $('app').style.display = 'none';
   $('lockScreen').style.display = 'flex';
