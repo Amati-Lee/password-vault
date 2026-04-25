@@ -1,6 +1,6 @@
 {
-  "name": "Password Vault",
-  "short_name": "Vault",
+  "name": "密碼簿",
+  "short_name": "密碼簿",
   "description": "加密帳號密碼簿",
   "start_url": "./index.html",
   "display": "standalone",
