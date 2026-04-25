@@ -26,6 +26,7 @@ input::placeholder,textarea::placeholder{color:var(--text2)}
 #lockScreen p{color:var(--text2);font-size:14px;margin-bottom:24px}
 #lockScreen .input-row{display:flex;gap:8px;width:100%;max-width:360px}
 #lockScreen input{flex:1}
+#lockScreen .btn-eye-lock{padding:8px 10px;background:var(--card);color:var(--text);font-size:18px;border:none;border-radius:var(--radius);cursor:pointer}
 #lockScreen .btn-unlock{padding:12px 20px;background:var(--accent);color:#fff;font-weight:600}
 #lockScreen .btn-setup{margin-top:12px;background:var(--accent2);color:#fff;padding:10px 20px;font-size:13px}
 #lockScreen .error{color:var(--accent);font-size:13px;margin-top:8px;min-height:18px}
@@ -89,6 +90,7 @@ input::placeholder,textarea::placeholder{color:var(--text2)}
   <p id="lockHint">輸入主密碼以解鎖</p>
   <div class="input-row">
     <input type="password" id="masterInput" placeholder="主密碼" autocomplete="off">
+    <button class="btn-eye-lock" id="btnEyeLock" title="顯示/隱藏密碼"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button>
     <button class="btn-unlock" id="btnUnlock">解鎖</button>
   </div>
   <button class="btn-setup" id="btnSetup" style="display:none">設定主密碼</button>
@@ -237,6 +239,17 @@ async function init() {
   }
   $('masterInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') $('btnUnlock').click();
+  });
+  $('btnEyeLock').addEventListener('click', () => {
+    const inp = $('masterInput');
+    const btn = $('btnEyeLock');
+    if (inp.type === 'password') {
+      inp.type = 'text';
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    } else {
+      inp.type = 'password';
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+    }
   });
   $('btnUnlock').addEventListener('click', doUnlock);
   $('btnSetup').addEventListener('click', doSetup);
