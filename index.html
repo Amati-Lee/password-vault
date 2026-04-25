@@ -243,17 +243,42 @@ let entries = []; // [{id, site, user, pass, note, created, modified}]
 
 const STORAGE_KEY = 'pv_data';
 const VERIFY_KEY = 'pv_verify';
+const SESSION_PW_KEY = 'pv_session_pw';
+const SESSION_FORM_KEY = 'pv_session_form';
 
 // --- DOM ---
 const $ = id => document.getElementById(id);
 
 async function init() {
   const hasVault = localStorage.getItem(VERIFY_KEY);
+  // 嘗試 session 自動解鎖（切換 app 回來時不用重新輸入密碼）
+  const sessionPw = sessionStorage.getItem(SESSION_PW_KEY);
+  if (hasVault && sessionPw) {
+    try {
+      const result = await decrypt(hasVault, sessionPw);
+      if (result === 'vault_ok') {
+        masterPassword = sessionPw;
+        await loadData(sessionPw);
+        showApp();
+        bindEvents();
+        return;
+      }
+    } catch(e) {
+      // session 密碼失效，清除並走正常流程
+      sessionStorage.removeItem(SESSION_PW_KEY);
+    }
+  }
   if (!hasVault) {
     $('lockHint').textContent = '首次使用，請設定主密碼';
     $('btnUnlock').style.display = 'none';
     $('btnSetup').style.display = '';
   }
+  bindEvents();
+}
+
+function bindEvents() {
+  if (bindEvents._done) return;
+  bindEvents._done = true;
   $('masterInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') $('btnUnlock').click();
   });
@@ -313,6 +338,7 @@ async function doSetup() {
     cachedSalt = salt;
     entries = [];
     masterPassword = pw;
+    sessionStorage.setItem(SESSION_PW_KEY, pw);
     await saveData();
     showApp();
   } catch(e) { $('lockError').textContent = '設定失敗: ' + e.message; }
@@ -327,6 +353,7 @@ async function doUnlock() {
     const result = await decrypt(verify, pw);
     if (result !== 'vault_ok') throw new Error('驗證失敗');
     masterPassword = pw;
+    sessionStorage.setItem(SESSION_PW_KEY, pw);
     await loadData(pw);
     showApp();
   } catch(e) {
@@ -343,6 +370,43 @@ function showApp() {
   renderList();
   // 檢查是否有因頁面被殺而未儲存的資料
   if (window._checkUnsaved) window._checkUnsaved();
+  // 恢復編輯中的表單
+  restoreFormState();
+}
+
+function saveFormState() {
+  // 如果編輯 modal 開著，或欄位有內容，都保存
+  const modalOpen = $('editModal').classList.contains('show');
+  const site = $('fSite').value;
+  const user = $('fUser').value;
+  const pass = $('fPass').value;
+  const note = $('fNote').value;
+  if (modalOpen || site || user || pass || note) {
+    sessionStorage.setItem(SESSION_FORM_KEY, JSON.stringify({
+      editingId, site, user, pass, note, modalOpen
+    }));
+  }
+}
+
+function restoreFormState() {
+  const raw = sessionStorage.getItem(SESSION_FORM_KEY);
+  if (!raw) return;
+  sessionStorage.removeItem(SESSION_FORM_KEY);
+  try {
+    const f = JSON.parse(raw);
+    if (!f.site && !f.user && !f.pass && !f.note) return;
+    editingId = f.editingId || null;
+    $('modalTitle').textContent = editingId ? '編輯帳號' : '新增帳號';
+    $('fSite').value = f.site || '';
+    $('fUser').value = f.user || '';
+    $('fPass').value = f.pass || '';
+    $('fPass').type = 'password';
+    $('fNote').value = f.note || '';
+    if (f.modalOpen) {
+      $('editModal').classList.add('show');
+      toast('已恢復編輯中的表單');
+    }
+  } catch(e) {}
 }
 
 async function loadData(pw) {
@@ -550,6 +614,7 @@ async function doChangePw() {
   } catch { toast('目前密碼錯誤'); return; }
 
   masterPassword = nw;
+  sessionStorage.setItem(SESSION_PW_KEY, nw);
   const newVerify = await encrypt('vault_ok', nw);
   localStorage.setItem(VERIFY_KEY, newVerify);
   await saveData(nw);
@@ -569,6 +634,9 @@ async function doLock() {
   cachedKey = null;
   cachedSalt = null;
   entries = [];
+  // 手動鎖定時清除 session（下次要重新輸入密碼）
+  sessionStorage.removeItem(SESSION_PW_KEY);
+  sessionStorage.removeItem(SESSION_FORM_KEY);
   $('app').style.display = 'none';
   $('lockScreen').style.display = 'flex';
   $('lockHint').textContent = '輸入主密碼以解鎖';
@@ -604,8 +672,9 @@ document.addEventListener('input', resetLockTimer);
 // Visibility change - save immediately when hidden, lock after 5 min
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && masterPassword) {
-    // 切到背景時立即存檔
+    // 切到背景時立即存檔 + 保存表單狀態
     if (entries.length > 0) saveData();
+    saveFormState();
     lockTimer = setTimeout(doLock, 5 * 60 * 1000);
   } else {
     resetLockTimer();
@@ -614,11 +683,13 @@ document.addEventListener('visibilitychange', () => {
 
 // 頁面被關閉或殺掉前，確保資料已存
 window.addEventListener('pagehide', () => {
-  if (masterPassword && entries.length > 0) {
+  if (masterPassword) {
     // pagehide 中不能用 async，用同步方式標記
     try {
-      // 備份當前 entries 到 sessionStorage（純 JSON，無加密，僅當次 session）
-      sessionStorage.setItem('pv_unsaved', JSON.stringify(entries));
+      if (entries.length > 0) {
+        sessionStorage.setItem('pv_unsaved', JSON.stringify(entries));
+      }
+      saveFormState();
     } catch(e) {}
   }
 });
