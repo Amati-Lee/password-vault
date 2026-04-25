@@ -527,11 +527,12 @@ function resetLockTimer() {
 document.addEventListener('click', resetLockTimer);
 document.addEventListener('keydown', resetLockTimer);
 document.addEventListener('touchstart', resetLockTimer);
+document.addEventListener('input', resetLockTimer);
 
-// Visibility change - lock when hidden for long
+// Visibility change - lock when hidden for 5 min
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && masterPassword) {
-    lockTimer = setTimeout(doLock, 60 * 1000); // Lock after 1 min hidden
+    lockTimer = setTimeout(doLock, 5 * 60 * 1000);
   } else {
     resetLockTimer();
   }
