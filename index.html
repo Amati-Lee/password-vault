@@ -294,6 +294,8 @@ function showApp() {
   $('app').style.display = 'flex';
   $('masterInput').value = '';
   renderList();
+  // 檢查是否有因頁面被殺而未儲存的資料
+  if (window._checkUnsaved) window._checkUnsaved();
 }
 
 async function loadData(pw) {
@@ -302,12 +304,26 @@ async function loadData(pw) {
   try {
     const json = await decrypt(raw, pw);
     entries = JSON.parse(json);
-  } catch(e) { entries = []; }
+  } catch(e) {
+    entries = [];
+    toast('資料解密失敗，請確認密碼是否正確');
+    console.error('loadData decrypt failed:', e);
+  }
 }
 
 async function saveData(pw) {
-  const enc = await encrypt(JSON.stringify(entries), pw || masterPassword);
-  localStorage.setItem(STORAGE_KEY, enc);
+  try {
+    const enc = await encrypt(JSON.stringify(entries), pw || masterPassword);
+    localStorage.setItem(STORAGE_KEY, enc);
+    // 驗證寫入成功
+    const check = localStorage.getItem(STORAGE_KEY);
+    if (!check || check !== enc) {
+      toast('儲存失敗：寫入驗證不通過');
+    }
+  } catch(e) {
+    toast('儲存失敗：' + e.message);
+    console.error('saveData failed:', e);
+  }
 }
 
 function renderList() {
@@ -495,7 +511,11 @@ async function doChangePw() {
   toast('主密碼已變更');
 }
 
-function doLock() {
+async function doLock() {
+  // 鎖定前先確保資料已存好
+  if (masterPassword && entries.length > 0) {
+    await saveData();
+  }
   masterPassword = null;
   entries = [];
   $('app').style.display = 'none';
@@ -505,6 +525,7 @@ function doLock() {
   $('btnSetup').style.display = 'none';
   $('masterInput').focus();
   $('settingsModal').classList.remove('show');
+  $('editModal').classList.remove('show');
 }
 
 function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -529,14 +550,47 @@ document.addEventListener('keydown', resetLockTimer);
 document.addEventListener('touchstart', resetLockTimer);
 document.addEventListener('input', resetLockTimer);
 
-// Visibility change - lock when hidden for 5 min
+// Visibility change - save immediately when hidden, lock after 5 min
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && masterPassword) {
+    // 切到背景時立即存檔
+    if (entries.length > 0) saveData();
     lockTimer = setTimeout(doLock, 5 * 60 * 1000);
   } else {
     resetLockTimer();
   }
 });
+
+// 頁面被關閉或殺掉前，確保資料已存
+window.addEventListener('pagehide', () => {
+  if (masterPassword && entries.length > 0) {
+    // pagehide 中不能用 async，用同步方式標記
+    try {
+      // 備份當前 entries 到 sessionStorage（純 JSON，無加密，僅當次 session）
+      sessionStorage.setItem('pv_unsaved', JSON.stringify(entries));
+    } catch(e) {}
+  }
+});
+
+// 頁面載入時檢查是否有未儲存的資料
+window._checkUnsaved = function() {
+  const unsaved = sessionStorage.getItem('pv_unsaved');
+  if (unsaved && masterPassword) {
+    try {
+      const recovered = JSON.parse(unsaved);
+      if (recovered.length > 0 && entries.length === 0) {
+        entries = recovered;
+        saveData().then(() => {
+          renderList();
+          toast('已恢復 ' + entries.length + ' 筆未儲存的資料');
+          sessionStorage.removeItem('pv_unsaved');
+        });
+      } else {
+        sessionStorage.removeItem('pv_unsaved');
+      }
+    } catch(e) { sessionStorage.removeItem('pv_unsaved'); }
+  }
+};
 
 // Register Service Worker
 if ('serviceWorker' in navigator) {
