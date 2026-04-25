@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Password Vault</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a1a2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#1a1a2e;--surface:#16213e;--card:#0f3460;--accent:#e94560;--accent2:#533483;--text:#eee;--text2:#aaa;--radius:12px}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text)}
+button{font-family:inherit;cursor:pointer;border:none;border-radius:var(--radius);font-size:14px;transition:opacity .2s}
+button:active{opacity:.7}
+input,textarea{font-family:inherit;font-size:16px;border:none;border-radius:var(--radius);padding:12px 14px;background:var(--bg);color:var(--text);width:100%;outline:none}
+input::placeholder,textarea::placeholder{color:var(--text2)}
+
+/* Lock Screen */
+#lockScreen{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:24px;text-align:center}
+#lockScreen .lock-icon{font-size:64px;margin-bottom:16px}
+#lockScreen h1{font-size:22px;margin-bottom:8px}
+#lockScreen p{color:var(--text2);font-size:14px;margin-bottom:24px}
+#lockScreen .input-row{display:flex;gap:8px;width:100%;max-width:360px}
+#lockScreen input{flex:1}
+#lockScreen .btn-unlock{padding:12px 20px;background:var(--accent);color:#fff;font-weight:600}
+#lockScreen .btn-setup{margin-top:12px;background:var(--accent2);color:#fff;padding:10px 20px;font-size:13px}
+#lockScreen .error{color:var(--accent);font-size:13px;margin-top:8px;min-height:18px}
+
+/* Main App */
+#app{display:none;height:100%;flex-direction:column}
+.header{display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--surface);position:sticky;top:0;z-index:10}
+.header input{flex:1;background:var(--bg);padding:10px 14px;font-size:15px}
+.header button{width:40px;height:40px;background:var(--card);color:var(--text);font-size:18px;flex-shrink:0}
+.list{flex:1;overflow-y:auto;padding:8px 12px 100px}
+.item{background:var(--surface);border-radius:var(--radius);padding:14px 16px;margin-bottom:8px;position:relative}
+.item-site{font-weight:600;font-size:15px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.item-site .favicon{width:18px;height:18px;border-radius:4px;vertical-align:middle}
+.item-user{color:var(--text2);font-size:13px;margin-bottom:6px}
+.item-pass{display:flex;align-items:center;gap:8px;font-size:14px}
+.item-pass code{flex:1;font-family:"SF Mono",Consolas,monospace;letter-spacing:1px;word-break:break-all}
+.item-pass button{width:32px;height:32px;background:var(--card);color:var(--text);font-size:14px;flex-shrink:0}
+.item-note{color:var(--text2);font-size:12px;margin-top:6px;white-space:pre-wrap}
+.item-actions{display:flex;gap:6px;margin-top:10px}
+.item-actions button{flex:1;padding:8px;font-size:12px;color:var(--text)}
+.btn-edit{background:var(--accent2)}
+.btn-del{background:#c0392b}
+.fab{position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:#fff;font-size:28px;box-shadow:0 4px 12px rgba(233,69,96,.4);z-index:20}
+.empty{text-align:center;color:var(--text2);margin-top:60px;font-size:15px}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:30;align-items:flex-end;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);border-radius:var(--radius) var(--radius) 0 0;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:20px 16px 32px}
+.modal h2{font-size:18px;margin-bottom:16px}
+.modal label{display:block;font-size:13px;color:var(--text2);margin:12px 0 4px}
+.modal .btn-row{display:flex;gap:8px;margin-top:20px}
+.modal .btn-row button{flex:1;padding:12px;font-weight:600}
+.btn-save{background:var(--accent);color:#fff}
+.btn-cancel{background:var(--card);color:var(--text)}
+.modal .pass-gen{display:flex;gap:8px;align-items:center}
+.modal .pass-gen input{flex:1}
+.modal .pass-gen button{width:40px;height:40px;background:var(--card);color:var(--text);font-size:16px;flex-shrink:0}
+
+/* Settings Modal */
+.settings-list{list-style:none}
+.settings-list li{padding:14px 0;border-bottom:1px solid var(--card);display:flex;align-items:center;justify-content:space-between}
+.settings-list li:last-child{border-bottom:none}
+.settings-list button{padding:8px 16px;font-size:13px;color:#fff}
+.btn-export{background:var(--accent2)}
+.btn-import{background:var(--card)}
+.btn-chpw{background:var(--accent)}
+.btn-lock{background:#c0392b}
+
+/* Toast */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--card);color:var(--text);padding:10px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;z-index:50;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- Lock Screen -->
+<div id="lockScreen">
+  <div class="lock-icon">&#128274;</div>
+  <h1>Password Vault</h1>
+  <p id="lockHint">輸入主密碼以解鎖</p>
+  <div class="input-row">
+    <input type="password" id="masterInput" placeholder="主密碼" autocomplete="off">
+    <button class="btn-unlock" id="btnUnlock">解鎖</button>
+  </div>
+  <button class="btn-setup" id="btnSetup" style="display:none">設定主密碼</button>
+  <div class="error" id="lockError"></div>
+</div>
+
+<!-- Main App -->
+<div id="app">
+  <div class="header">
+    <input type="search" id="searchInput" placeholder="搜尋...">
+    <button id="btnSettings" title="設定">&#9881;</button>
+  </div>
+  <div class="list" id="list"></div>
+  <button class="fab" id="btnAdd" title="新增">+</button>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h2 id="modalTitle">新增帳號</h2>
+    <label>網站 / 服務名稱</label>
+    <input id="fSite" placeholder="例: Google">
+    <label>帳號 / Email</label>
+    <input id="fUser" placeholder="example@gmail.com">
+    <label>密碼</label>
+    <div class="pass-gen">
+      <input id="fPass" type="password" placeholder="密碼">
+      <button id="btnTogglePass" title="顯示/隱藏">&#128065;</button>
+      <button id="btnGenPass" title="產生隨機密碼">&#127922;</button>
+    </div>
+    <label>備註 (選填)</label>
+    <textarea id="fNote" rows="2" placeholder="備註"></textarea>
+    <div class="btn-row">
+      <button class="btn-cancel" id="btnEditCancel">取消</button>
+      <button class="btn-save" id="btnEditSave">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <h2>設定</h2>
+    <ul class="settings-list">
+      <li>匯出加密備份<button class="btn-export" id="btnExport">匯出</button></li>
+      <li>匯入加密備份<button class="btn-import" id="btnImportTrigger">匯入</button></li>
+      <li>變更主密碼<button class="btn-chpw" id="btnChangePw">變更</button></li>
+      <li>鎖定<button class="btn-lock" id="btnLock">鎖定</button></li>
+    </ul>
+    <input type="file" id="importFile" accept=".vault" style="display:none">
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn-cancel" id="btnSettingsClose">關閉</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change Password Modal -->
+<div class="modal-overlay" id="chpwModal">
+  <div class="modal">
+    <h2>變更主密碼</h2>
+    <label>目前密碼</label>
+    <input id="chpwOld" type="password" placeholder="目前密碼">
+    <label>新密碼</label>
+    <input id="chpwNew" type="password" placeholder="新密碼 (至少 6 字元)">
+    <label>確認新密碼</label>
+    <input id="chpwConfirm" type="password" placeholder="再次輸入新密碼">
+    <div class="btn-row">
+      <button class="btn-cancel" id="btnChpwCancel">取消</button>
+      <button class="btn-save" id="btnChpwSave">確認變更</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+
+// --- Crypto helpers ---
+const ENC = new TextEncoder();
+const DEC = new TextDecoder();
+
+async function deriveKey(password, salt) {
+  const raw = await crypto.subtle.importKey('raw', ENC.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    {name:'PBKDF2', salt, iterations:600000, hash:'SHA-256'},
+    raw,
+    {name:'AES-GCM', length:256},
+    false,
+    ['encrypt','decrypt']
+  );
+}
+
+async function encrypt(plaintext, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt);
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, ENC.encode(plaintext));
+  const buf = new Uint8Array(16 + 12 + ct.byteLength);
+  buf.set(salt, 0);
+  buf.set(iv, 16);
+  buf.set(new Uint8Array(ct), 28);
+  return btoa(String.fromCharCode(...buf));
+}
+
+async function decrypt(b64, password) {
+  const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const salt = raw.slice(0, 16);
+  const iv = raw.slice(16, 28);
+  const ct = raw.slice(28);
+  const key = await deriveKey(password, salt);
+  const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, ct);
+  return DEC.decode(pt);
+}
+
+// --- State ---
+let masterPassword = null;
+let entries = []; // [{id, site, user, pass, note, created, modified}]
+
+const STORAGE_KEY = 'pv_data';
+const VERIFY_KEY = 'pv_verify';
+
+// --- DOM ---
+const $ = id => document.getElementById(id);
+
+async function init() {
+  const hasVault = localStorage.getItem(VERIFY_KEY);
+  if (!hasVault) {
+    $('lockHint').textContent = '首次使用，請設定主密碼';
+    $('btnUnlock').style.display = 'none';
+    $('btnSetup').style.display = '';
+  }
+  $('masterInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') $('btnUnlock').click();
+  });
+  $('btnUnlock').addEventListener('click', doUnlock);
+  $('btnSetup').addEventListener('click', doSetup);
+  $('btnAdd').addEventListener('click', () => openEditModal());
+  $('btnEditCancel').addEventListener('click', closeEditModal);
+  $('btnEditSave').addEventListener('click', saveEntry);
+  $('btnTogglePass').addEventListener('click', () => {
+    const f = $('fPass');
+    f.type = f.type === 'password' ? 'text' : 'password';
+  });
+  $('btnGenPass').addEventListener('click', () => {
+    $('fPass').value = generatePassword();
+    $('fPass').type = 'text';
+  });
+  $('searchInput').addEventListener('input', renderList);
+  $('btnSettings').addEventListener('click', () => $('settingsModal').classList.add('show'));
+  $('btnSettingsClose').addEventListener('click', () => $('settingsModal').classList.remove('show'));
+  $('btnExport').addEventListener('click', doExport);
+  $('btnImportTrigger').addEventListener('click', () => $('importFile').click());
+  $('importFile').addEventListener('change', doImport);
+  $('btnChangePw').addEventListener('click', () => {
+    $('settingsModal').classList.remove('show');
+    $('chpwModal').classList.add('show');
+  });
+  $('btnChpwCancel').addEventListener('click', () => $('chpwModal').classList.remove('show'));
+  $('btnChpwSave').addEventListener('click', doChangePw);
+  $('btnLock').addEventListener('click', doLock);
+
+  // Close modals on overlay click
+  for (const ov of document.querySelectorAll('.modal-overlay')) {
+    ov.addEventListener('click', e => { if (e.target === ov) ov.classList.remove('show'); });
+  }
+}
+
+async function doSetup() {
+  const pw = $('masterInput').value.trim();
+  if (pw.length < 6) { $('lockError').textContent = '密碼至少 6 個字元'; return; }
+  try {
+    const verify = await encrypt('vault_ok', pw);
+    localStorage.setItem(VERIFY_KEY, verify);
+    entries = [];
+    await saveData(pw);
+    masterPassword = pw;
+    showApp();
+  } catch(e) { $('lockError').textContent = '設定失敗: ' + e.message; }
+}
+
+async function doUnlock() {
+  const pw = $('masterInput').value;
+  if (!pw) return;
+  $('lockError').textContent = '';
+  try {
+    const verify = localStorage.getItem(VERIFY_KEY);
+    const result = await decrypt(verify, pw);
+    if (result !== 'vault_ok') throw new Error('驗證失敗');
+    masterPassword = pw;
+    await loadData(pw);
+    showApp();
+  } catch(e) {
+    $('lockError').textContent = '密碼錯誤';
+    $('masterInput').value = '';
+    $('masterInput').focus();
+  }
+}
+
+function showApp() {
+  $('lockScreen').style.display = 'none';
+  $('app').style.display = 'flex';
+  $('masterInput').value = '';
+  renderList();
+}
+
+async function loadData(pw) {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) { entries = []; return; }
+  try {
+    const json = await decrypt(raw, pw);
+    entries = JSON.parse(json);
+  } catch(e) { entries = []; }
+}
+
+async function saveData(pw) {
+  const enc = await encrypt(JSON.stringify(entries), pw || masterPassword);
+  localStorage.setItem(STORAGE_KEY, enc);
+}
+
+function renderList() {
+  const q = $('searchInput').value.toLowerCase();
+  const filtered = entries.filter(e =>
+    e.site.toLowerCase().includes(q) ||
+    e.user.toLowerCase().includes(q) ||
+    (e.note || '').toLowerCase().includes(q)
+  );
+  // Sort by modified desc
+  filtered.sort((a, b) => (b.modified || 0) - (a.modified || 0));
+
+  if (filtered.length === 0) {
+    $('list').innerHTML = '<div class="empty">' + (entries.length === 0 ? '尚無帳號，點 + 新增' : '無搜尋結果') + '</div>';
+    return;
+  }
+
+  $('list').innerHTML = filtered.map(e => {
+    const masked = '\u2022'.repeat(8);
+    const noteHtml = e.note ? '<div class="item-note">' + escHtml(e.note) + '</div>' : '';
+    return '<div class="item" data-id="' + e.id + '">' +
+      '<div class="item-site">' + escHtml(e.site) + '</div>' +
+      '<div class="item-user">' + escHtml(e.user) + '</div>' +
+      '<div class="item-pass">' +
+        '<code data-revealed="0" data-pw="' + escAttr(e.pass) + '">' + masked + '</code>' +
+        '<button class="btn-eye" title="顯示">&#128065;</button>' +
+        '<button class="btn-copy" title="複製">&#128203;</button>' +
+      '</div>' +
+      noteHtml +
+      '<div class="item-actions">' +
+        '<button class="btn-edit">編輯</button>' +
+        '<button class="btn-del">刪除</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  // Event delegation
+  $('list').onclick = function(ev) {
+    const item = ev.target.closest('.item');
+    if (!item) return;
+    const id = item.dataset.id;
+
+    if (ev.target.classList.contains('btn-eye')) {
+      const code = item.querySelector('code');
+      if (code.dataset.revealed === '0') {
+        code.textContent = code.dataset.pw;
+        code.dataset.revealed = '1';
+      } else {
+        code.textContent = '\u2022'.repeat(8);
+        code.dataset.revealed = '0';
+      }
+    } else if (ev.target.classList.contains('btn-copy')) {
+      const pw = item.querySelector('code').dataset.pw;
+      navigator.clipboard.writeText(pw).then(() => toast('已複製密碼'));
+    } else if (ev.target.classList.contains('btn-edit')) {
+      openEditModal(id);
+    } else if (ev.target.classList.contains('btn-del')) {
+      if (confirm('確定刪除此帳號？')) {
+        entries = entries.filter(e => e.id !== id);
+        saveData().then(() => { renderList(); toast('已刪除'); });
+      }
+    }
+  };
+}
+
+let editingId = null;
+
+function openEditModal(id) {
+  if (id) {
+    const e = entries.find(x => x.id === id);
+    if (!e) return;
+    editingId = id;
+    $('modalTitle').textContent = '編輯帳號';
+    $('fSite').value = e.site;
+    $('fUser').value = e.user;
+    $('fPass').value = e.pass;
+    $('fPass').type = 'password';
+    $('fNote').value = e.note || '';
+  } else {
+    editingId = null;
+    $('modalTitle').textContent = '新增帳號';
+    $('fSite').value = '';
+    $('fUser').value = '';
+    $('fPass').value = '';
+    $('fPass').type = 'password';
+    $('fNote').value = '';
+  }
+  $('editModal').classList.add('show');
+  $('fSite').focus();
+}
+
+function closeEditModal() {
+  $('editModal').classList.remove('show');
+}
+
+async function saveEntry() {
+  const site = $('fSite').value.trim();
+  const user = $('fUser').value.trim();
+  const pass = $('fPass').value;
+  const note = $('fNote').value.trim();
+  if (!site) { toast('請輸入網站名稱'); return; }
+  if (!pass) { toast('請輸入密碼'); return; }
+
+  const now = Date.now();
+  if (editingId) {
+    const e = entries.find(x => x.id === editingId);
+    if (e) { e.site = site; e.user = user; e.pass = pass; e.note = note; e.modified = now; }
+  } else {
+    entries.push({ id: crypto.randomUUID(), site, user, pass, note, created: now, modified: now });
+  }
+  await saveData();
+  closeEditModal();
+  renderList();
+  toast(editingId ? '已更新' : '已新增');
+}
+
+function generatePassword(len) {
+  len = len || 20;
+  const charset = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*-_=+';
+  const arr = crypto.getRandomValues(new Uint8Array(len));
+  return Array.from(arr, v => charset[v % charset.length]).join('');
+}
+
+async function doExport() {
+  const data = localStorage.getItem(STORAGE_KEY);
+  const verify = localStorage.getItem(VERIFY_KEY);
+  if (!data) { toast('沒有資料可匯出'); return; }
+  const payload = JSON.stringify({ verify, data, exported: new Date().toISOString() });
+  const blob = new Blob([payload], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'password-vault-' + new Date().toISOString().slice(0,10) + '.vault';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('已匯出');
+  $('settingsModal').classList.remove('show');
+}
+
+async function doImport(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  ev.target.value = '';
+  try {
+    const text = await file.text();
+    const obj = JSON.parse(text);
+    if (!obj.verify || !obj.data) throw new Error('格式錯誤');
+    // Verify with current master password
+    const check = await decrypt(obj.verify, masterPassword);
+    if (check !== 'vault_ok') {
+      toast('備份檔的密碼與目前不同，無法匯入');
+      return;
+    }
+    localStorage.setItem(VERIFY_KEY, obj.verify);
+    localStorage.setItem(STORAGE_KEY, obj.data);
+    await loadData(masterPassword);
+    renderList();
+    toast('已匯入 ' + entries.length + ' 筆');
+  } catch(e) {
+    toast('匯入失敗: ' + e.message);
+  }
+  $('settingsModal').classList.remove('show');
+}
+
+async function doChangePw() {
+  const old = $('chpwOld').value;
+  const nw = $('chpwNew').value;
+  const cf = $('chpwConfirm').value;
+  if (!old || !nw) { toast('請填寫所有欄位'); return; }
+  if (nw.length < 6) { toast('新密碼至少 6 個字元'); return; }
+  if (nw !== cf) { toast('兩次密碼不一致'); return; }
+  try {
+    const check = await decrypt(localStorage.getItem(VERIFY_KEY), old);
+    if (check !== 'vault_ok') { toast('目前密碼錯誤'); return; }
+  } catch { toast('目前密碼錯誤'); return; }
+
+  masterPassword = nw;
+  const newVerify = await encrypt('vault_ok', nw);
+  localStorage.setItem(VERIFY_KEY, newVerify);
+  await saveData(nw);
+  $('chpwOld').value = '';
+  $('chpwNew').value = '';
+  $('chpwConfirm').value = '';
+  $('chpwModal').classList.remove('show');
+  toast('主密碼已變更');
+}
+
+function doLock() {
+  masterPassword = null;
+  entries = [];
+  $('app').style.display = 'none';
+  $('lockScreen').style.display = 'flex';
+  $('lockHint').textContent = '輸入主密碼以解鎖';
+  $('btnUnlock').style.display = '';
+  $('btnSetup').style.display = 'none';
+  $('masterInput').focus();
+  $('settingsModal').classList.remove('show');
+}
+
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// Auto-lock after 5 min inactivity
+let lockTimer;
+function resetLockTimer() {
+  clearTimeout(lockTimer);
+  if (masterPassword) lockTimer = setTimeout(doLock, 5 * 60 * 1000);
+}
+document.addEventListener('click', resetLockTimer);
+document.addEventListener('keydown', resetLockTimer);
+document.addEventListener('touchstart', resetLockTimer);
+
+// Visibility change - lock when hidden for long
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && masterPassword) {
+    lockTimer = setTimeout(doLock, 60 * 1000); // Lock after 1 min hidden
+  } else {
+    resetLockTimer();
+  }
+});
+
+// Register Service Worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+}
+
+init();
+})();
+</script>
+</body>
+</html>
