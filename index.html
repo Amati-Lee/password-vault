@@ -318,9 +318,10 @@ async function loadData(pw) {
     const json = await decrypt(raw, pw);
     entries = JSON.parse(json);
   } catch(e) {
+    // 資料損壞（可能是舊版 bug 造成），清除並重新開始
     entries = [];
-    toast('資料解密失敗，請確認密碼是否正確');
-    console.error('loadData decrypt failed:', e);
+    localStorage.removeItem(STORAGE_KEY);
+    console.error('loadData decrypt failed, cleared corrupt data:', e);
   }
 }
 
